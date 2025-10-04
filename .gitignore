@@ -1,0 +1,12 @@
+# Eijiro dictionary data file
+# 英辞郎の辞書データファイルは除外します
+EIJIRO-1448.TXT
+*.TXT
+
+# Output directory for generated dictionary files
+# 生成された辞書ファイルが格納されるディレクトリを除外します
+/output_stardict/
+
+# Compiled binary (if you run `go build`)
+# `go build`で生成される実行可能ファイルを除外します
+eijiro-converter

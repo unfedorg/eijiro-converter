@@ -20,8 +20,8 @@ func TestEijiroConversionWithRealData(t *testing.T) {
 
 	// minimal=true相当のオプションでテストする
 	opts := ParseOptions{
-		IncludeExamples:      false,
-		IncludeSupplement:    false,
+		StripExamples:        true,
+		StripSupplement:      true,
 		StripRuby:            true,
 		StripPDICLink:        false, // minimalでもPDICリンクは除外しない
 		StripPronunciation:   true,

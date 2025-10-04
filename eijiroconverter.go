@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	// 文字コード変換のためにパッケージを追加
 	"golang.org/x/text/encoding/japanese"
@@ -26,7 +27,6 @@ type DictionaryEntry struct {
 
 // StarDictInfo は .ifo ファイルに書き込む情報を保持する構造体
 type StarDictInfo struct {
-	Version     string
 	BookName    string
 	WordCount   uint32
 	IdxFileSize uint32
@@ -34,6 +34,7 @@ type StarDictInfo struct {
 	Description string
 	Date        string
 	SameTypeSeq string
+	Version     string
 }
 
 // 正規表現をコンパイル（一度だけ行い、効率化）
@@ -59,8 +60,8 @@ var (
 
 // ParseOptions はパース時のオプションを保持する構造体
 type ParseOptions struct {
-	IncludeExamples      bool // 用例 (■・)
-	IncludeSupplement    bool // 補足説明 (◆)
+	StripExamples        bool // 用例 (■・)
+	StripSupplement      bool // 補足説明 (◆)
 	StripRuby            bool // 読み仮名 ({})
 	StripPDICLink        bool // PDICリンク (<→...>)
 	StripPronunciation   bool // 発音記号 (【発音】)
@@ -70,7 +71,6 @@ type ParseOptions struct {
 	StripSyllabification bool // 分節 (【分節】)
 	StripOtherLabels     bool // その他のラベル ({名}, 【大学入試】など)を削除
 	SingleWordOnly       bool // 見出語が単一の単語のみ
-	StripBrackets        bool // 置き換え可能な語 ([...])
 }
 
 func main() {
@@ -80,8 +80,8 @@ func main() {
 	bookName := flag.String("b", "Eijiro", "辞書の名前")
 
 	// --- パースオプションのフラグ定義 ---
-	noExamples := flag.Bool("no-examples", false, "用例(■・)を除外する")
-	noSupplement := flag.Bool("no-supplement", false, "補足説明(◆)を除外する")
+	stripExamples := flag.Bool("strip-examples", false, "用例(■・)を除外する")
+	stripSupplement := flag.Bool("strip-supplement", false, "補足説明(◆)を除外する")
 	stripRuby := flag.Bool("strip-ruby", false, "読み仮名({…})を削除する")
 	stripPDICLink := flag.Bool("strip-pdic-link", false, "PDICリンク(<→…>)を削除する")
 	stripPronunciation := flag.Bool("strip-pronunciation", false, "発音記号(【発音】…)を削除する")
@@ -100,8 +100,8 @@ func main() {
 	// --- パースオプションの設定 ---
 	opts := ParseOptions{
 		// isMinimalがtrueの場合、個別の指定に関わらず除外/削除する
-		IncludeExamples:      !*noExamples && !isMinimal,
-		IncludeSupplement:    !*noSupplement && !isMinimal,
+		StripExamples:        *stripExamples || isMinimal,
+		StripSupplement:      *stripSupplement || isMinimal,
 		StripRuby:            *stripRuby || isMinimal,
 		StripPDICLink:        *stripPDICLink, // minimalオプションの影響を受けないように変更
 		StripPronunciation:   *stripPronunciation || isMinimal,
@@ -128,16 +128,40 @@ func main() {
 	}
 	log.Printf("%d件のエントリを読み込みました。", len(entries))
 
+	// ファイル名からバージョンを抽出
+	version := extractVersionFromFilename(*inputFile)
+	log.Printf("辞書バージョンを '%s' に設定します。", version)
+
 	// 2. 変化形の参照を解決し、定義をマージする
 	finalEntries := resolveAndMergeEntries(entries)
 
 	// 3. StarDict ファイルを生成
-	err = writeStarDictFiles(*outputDir, *bookName, finalEntries)
+	err = writeStarDictFiles(*outputDir, *bookName, version, finalEntries)
 	if err != nil {
 		log.Fatalf("StarDictファイルの書き込みに失敗しました: %v", err)
 	}
 
 	log.Printf("処理が完了しました。出力先: %s", *outputDir)
+}
+
+// extractVersionFromFilename はファイル名からバージョン情報を抽出する
+// 例: "EIJIRO-1448.TXT" -> "144.8"
+// バージョンが見つからない場合は "1.0" を返す
+func extractVersionFromFilename(filename string) string {
+	re := regexp.MustCompile(`-([0-9]+)`) // ファイル名に含まれるハイフンと数字を検索
+	matches := re.FindStringSubmatch(filename)
+
+	if len(matches) < 2 {
+		return "1.0" // バージョンが見つからない場合
+	}
+
+	versionStr := matches[1] // "1448"
+	if len(versionStr) > 1 {
+		// 最後の文字の前にドットを挿入
+		return versionStr[:len(versionStr)-1] + "." + versionStr[len(versionStr)-1:]
+	}
+
+	return versionStr // 1桁の場合はそのまま返す
 }
 
 // resolveAndMergeEntries はパースされたエントリを受け取り、変化形のリンクを解決して定義をマージする
@@ -281,7 +305,7 @@ func parseEijiro(filePath string, opts ParseOptions) ([]DictionaryEntry, error) 
 			// 直前のエントリと同じ見出し語の場合、定義を追記する
 			if currentEntry != nil && currentEntry.Headword == headword {
 				processedDef := processDefinition(definition, opts)
-				if opts.IncludeExamples && example != "" {
+				if !opts.StripExamples && example != "" {
 					// "■・" を取り除いてから追加
 					processedDef += "\n" + "■" + strings.TrimPrefix(example, "■・")
 				}
@@ -306,7 +330,7 @@ func parseEijiro(filePath string, opts ParseOptions) ([]DictionaryEntry, error) 
 			definition = processDefinition(definition, opts)
 
 			// 用例を追加する（オプションが有効な場合）
-			if opts.IncludeExamples && example != "" {
+			if !opts.StripExamples && example != "" {
 				definition += "\n" + "■" + strings.TrimPrefix(example, "■・")
 			}
 
@@ -317,14 +341,14 @@ func parseEijiro(filePath string, opts ParseOptions) ([]DictionaryEntry, error) 
 		} else if currentEntry != nil {
 			// 用例 (■・)
 			if strings.HasPrefix(line, "■・") {
-				if opts.IncludeExamples {
+				if !opts.StripExamples {
 					// "■・" を取り除いて追加
 					exampleLine := strings.TrimPrefix(line, "■・")
 					currentEntry.Definition += "\n" + "■" + exampleLine
 				}
 			} else if strings.HasPrefix(line, "◆") {
 				// 補足説明 (◆)
-				if opts.IncludeSupplement {
+				if !opts.StripSupplement {
 					currentEntry.Definition += "\n" + line
 				}
 			}
@@ -388,7 +412,7 @@ func processDefinition(def string, opts ParseOptions) string {
 }
 
 // writeStarDictFiles はパースしたエントリからStarDictファイルを書き出す
-func writeStarDictFiles(dir, bookName string, entries []DictionaryEntry) error {
+func writeStarDictFiles(dir, bookName, version string, entries []DictionaryEntry) error {
 	// ファイルパスを定義
 	ifoPath := filepath.Join(dir, bookName+".ifo")
 	idxPath := filepath.Join(dir, bookName+".idx")
@@ -438,13 +462,14 @@ func writeStarDictFiles(dir, bookName string, entries []DictionaryEntry) error {
 
 	// .ifo ファイルを書き込み
 	ifo := StarDictInfo{
-		Version:     "2.4.2",
+		Version:     version,
 		BookName:    bookName,
 		WordCount:   uint32(len(entries)),
 		IdxFileSize: uint32(idxBuf.Len()),
 		SameTypeSeq: "g", // 'g' はdictzip圧縮されたUTF-8テキストを意味する
 		Author:      "Converted with Go",
 		Description: "A comprehensive Japanese-English dictionary based on Eijiro data, converted with eijiro-converter.",
+		Date:        time.Now().Format("2006-01-02"),
 	}
 	return writeIfoFile(ifoPath, ifo)
 }

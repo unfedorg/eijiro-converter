@@ -55,10 +55,10 @@ go run eijiroconverter.go -minimal
 | `-i` | 入力する英辞郎ファイル名 | `EIJIRO-1448.TXT` |
 | `-o` | 出力先ディレクトリ | `output_stardict` |
 | `-b` | 辞書の名前 | `Eijiro` |
-| `-strip-pdic-link` | PDICリンク(<→…>)を削除する | `false` |
 | `-minimal` | 下記のすべての追加情報を除外し、最小限の定義のみを対象とする | `false` |
-| `-no-examples` | 用例(■・)を除外する | `false` |
-| `-no-supplement` | 補足説明(◆)を除外する | `false` |
+| `-strip-examples` | 用例(■・)を除外する | `false` |
+| `-strip-supplement` | 補足説明(◆)を除外する | `false` |
+| `-strip-pdic-link` | PDICリンク(<→…>)を削除する | `false` |
 | `-strip-ruby` | 読み仮名({…})を削除する | `false` |
 | `-strip-pronunciation` | 発音記号(【発音】…)を削除する | `false` |
 | `-strip-katakana` | カタカナ発音(【＠】…)を削除する | `false` |
